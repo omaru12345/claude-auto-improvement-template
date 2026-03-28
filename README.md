@@ -78,6 +78,41 @@ GitHub → Actions → 「Claude - 自律改善ループ」→「Run workflow」
 
 ---
 
+## ⚠️ よくあるハマりポイント
+
+| 症状 | 原因 | 対処 |
+|---|---|---|
+| `App token exchange failed: 401` | `id-token: write` が permissions にない | 全ワークフローに `id-token: write` を追加（Copilot が削除を提案しても無視） |
+| ワークフローが途中で止まる（承認待ち） | `--dangerously-skip-permissions` 未設定 | 全 Claude ワークフローの `claude_args` に追加 |
+| Bot 作成 PR に Copilot がアサインされない | Bot actor は `pull_request` イベントを発火しない | improvement-loop.yml に Copilot アサインステップを追加（下記参照） |
+| `claude-review.yml` が permission_denials で失敗 | レビューワークフローにも `--dangerously-skip-permissions` が必要 | `claude_args: "--max-turns 15 --dangerously-skip-permissions"` に変更 |
+| Bot 作成 PR にレビューが通らない | Bot actor はデフォルトでブロック | `allowed_bots: "claude[bot]"` を `claude-review.yml` に追加 |
+
+### Copilot 自動アサインステップの追加
+
+`claude-improvement-loop.yml` の末尾に追加：
+
+```yaml
+      - name: Assign Copilot to auto-improvement PRs
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr list --label auto-improvement --state open \
+            --json number,reviewRequests \
+            --jq '.[] | select(.reviewRequests | length == 0) | .number' | \
+          while read pr_number; do
+            gh api --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/pulls/${pr_number}/requested_reviewers" \
+              -f "reviewers[]=copilot-pull-request-reviewer" \
+              && echo "Copilot assigned to PR #${pr_number}" \
+              || echo "Copilot assignment skipped for PR #${pr_number}"
+          done
+```
+
+---
+
 ## コスト目安
 
 | 項目 | 目安 |
