@@ -3,14 +3,15 @@ name: Claude - 自律改善ループ
 on:
   schedule:
     - cron: '0 0 * * 1'  # 月曜 9:00 JST (UTC 0:00)
-    - cron: '0 0 * * 5'  # 金曜 9:00 JST (UTC 0:00)
+    # 金曜も動かす場合は下の行を有効化（1回約 $5 かかるため注意）
+    # - cron: '0 0 * * 5'  # 金曜 9:00 JST (UTC 0:00)
   workflow_dispatch:      # 手動実行（テスト用）
 
 permissions:
   contents: write
   pull-requests: write
   issues: write
-  id-token: write
+  id-token: write        # ← 削除禁止（claude-code-action@v1 の OIDC 認証に必須）
 
 jobs:
   improvement-loop:
@@ -35,12 +36,13 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_args: "--max-turns 100"
+          claude_args: "--max-turns 100 --dangerously-skip-permissions"
+          # show_full_output: "true"  # デバッグ時のみ有効化
           prompt: |
-            あなたは industry-tech-cases の自律改善エージェントです。
+            あなたはこのリポジトリの自律改善エージェントです。
             .claude/skills/improvement-loop.md の手順に従い、改善ループを一通り実施してください。
 
-            実行トリガー: ${{ github.event_name }} (月曜または金曜 9:00 JST)
+            実行トリガー: ${{ github.event_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
@@ -48,3 +50,20 @@ jobs:
           ADSENSE_CLIENT_SECRET: ${{ secrets.ADSENSE_CLIENT_SECRET }}
           ADSENSE_REFRESH_TOKEN: ${{ secrets.ADSENSE_REFRESH_TOKEN }}
           ADSENSE_PUBLISHER_ID: ${{ secrets.ADSENSE_PUBLISHER_ID }}
+
+      - name: Assign Copilot to auto-improvement PRs
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr list --label auto-improvement --state open \
+            --json number,reviewRequests \
+            --jq '.[] | select(.reviewRequests | length == 0) | .number' | \
+          while read pr_number; do
+            gh api --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/pulls/${pr_number}/requested_reviewers" \
+              -f "reviewers[]=copilot-pull-request-reviewer" \
+              && echo "Copilot assigned to PR #${pr_number}" \
+              || echo "Copilot assignment skipped for PR #${pr_number}"
+          done
