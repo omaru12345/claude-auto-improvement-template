@@ -1,0 +1,49 @@
+name: Claude - 自律改善ループ
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'  # 月曜 9:00 JST (UTC 0:00)
+    - cron: '0 0 * * 5'  # 金曜 9:00 JST (UTC 0:00)
+  workflow_dispatch:      # 手動実行（テスト用）
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  improvement-loop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install -q "google-auth>=2.0,<3" "google-api-python-client>=2.0,<3" "requests>=2.0,<3"
+
+      - name: Setup git user
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: "--max-turns 100"
+          prompt: |
+            あなたは industry-tech-cases の自律改善エージェントです。
+            .claude/skills/improvement-loop.md の手順に従い、改善ループを一通り実施してください。
+
+            実行トリガー: ${{ github.event_name }} (月曜または金曜 9:00 JST)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          ADSENSE_CLIENT_ID: ${{ secrets.ADSENSE_CLIENT_ID }}
+          ADSENSE_CLIENT_SECRET: ${{ secrets.ADSENSE_CLIENT_SECRET }}
+          ADSENSE_REFRESH_TOKEN: ${{ secrets.ADSENSE_REFRESH_TOKEN }}
+          ADSENSE_PUBLISHER_ID: ${{ secrets.ADSENSE_PUBLISHER_ID }}
