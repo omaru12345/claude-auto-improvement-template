@@ -1,17 +1,17 @@
-name: Claude - 自律改善ループ
+name: Claude - Autonomous Improvement Loop
 
 on:
   schedule:
-    - cron: '0 0 * * 1'  # 月曜 9:00 JST (UTC 0:00)
-    # 金曜も動かす場合は下の行を有効化（1回約 $5 かかるため注意）
-    # - cron: '0 0 * * 5'  # 金曜 9:00 JST (UTC 0:00)
-  workflow_dispatch:      # 手動実行（テスト用）
+    - cron: '0 0 * * 1'  # Monday 9:00 AM JST (UTC 0:00)
+    # Uncomment to also run on Fridays (~$5 per run)
+    # - cron: '0 0 * * 5'  # Friday 9:00 AM JST (UTC 0:00)
+  workflow_dispatch:      # Manual trigger for testing
 
 permissions:
   contents: write
   pull-requests: write
   issues: write
-  id-token: write        # ← 削除禁止（claude-code-action@v1 の OIDC 認証に必須）
+  id-token: write        # ← DO NOT REMOVE — required for claude-code-action@v1 OIDC auth
 
 jobs:
   improvement-loop:
@@ -37,12 +37,12 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: "--max-turns 100 --dangerously-skip-permissions"
-          # show_full_output: "true"  # デバッグ時のみ有効化
+          # show_full_output: "true"  # Uncomment for debugging
           prompt: |
-            あなたはこのリポジトリの自律改善エージェントです。
-            .claude/skills/improvement-loop.md の手順に従い、改善ループを一通り実施してください。
+            You are the autonomous improvement agent for this repository.
+            Follow the steps in .claude/skills/improvement-loop.md to run one full improvement cycle.
 
-            実行トリガー: ${{ github.event_name }}
+            Trigger: ${{ github.event_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
@@ -51,6 +51,8 @@ jobs:
           ADSENSE_REFRESH_TOKEN: ${{ secrets.ADSENSE_REFRESH_TOKEN }}
           ADSENSE_PUBLISHER_ID: ${{ secrets.ADSENSE_PUBLISHER_ID }}
 
+      # Assign Copilot to any auto-improvement PRs that have no reviewer yet.
+      # Bot-created PRs don't fire pull_request events, so auto-assign workflows won't trigger.
       - name: Assign Copilot to auto-improvement PRs
         if: always()
         env:

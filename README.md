@@ -1,135 +1,116 @@
 # claude-auto-improvement-template
 
-**Claude Code × GitHub Actions による自律改善ループのテンプレートです。**
+**A template for autonomous improvement loops using Claude Code × GitHub Actions.**
 
-毎週月・金の朝9時に Claude AI が自動でサイトを分析 → 課題を選定 → 実装 → PR作成します。あなたはPRを確認してマージするだけ。
+Every Monday at 9:00 AM JST, Claude AI automatically analyzes your site → selects issues → implements fixes → creates PRs. You just review and merge.
 
----
-
-## 仕組み
-
-```
-毎週月・金 9:00 JST
-    │
-    ├─ Google Search Console で SEO データ取得
-    ├─ AdSense API でページ別収益取得（任意）
-    ├─ Web 検索で競合調査
-    │
-    ├─ 重要インサイトあり？
-    │   Yes → GitHub Issue を新規作成
-    │   No  → 既存の未対応 Issue を選択
-    │
-    └─ 実装 → テスト → PR 作成
-
-PR レビュー提出
-    └─ Copilot のコメントに自動対応 → push → 返信
-```
+> 🇯🇵 [日本語版 README はこちら](README.ja.md)
 
 ---
 
-## セットアップ
+## How it works
 
-### 1. このリポジトリをテンプレートとして使用
+```
+Every Monday 9:00 AM JST
+    │
+    ├─ Fetch SEO data from Google Search Console
+    ├─ Fetch page-level revenue from AdSense API (optional)
+    ├─ Web search for competitor research
+    │
+    ├─ Any high/medium priority insights?
+    │   Yes → Create new GitHub Issues
+    │   No  → Pick from existing open Issues
+    │
+    └─ Implement → Test → Create PR
 
-「Use this template」ボタンから自分のリポジトリを作成してください。
+PR review submitted
+    └─ Auto-respond to Copilot comments → push fixes → reply
+```
 
-### 2. GitHub Secrets の登録
+---
+
+## Setup
+
+### 1. Use this repository as a template
+
+Click the **"Use this template"** button to create your own repository.
+
+### 2. Register GitHub Secrets
 
 ```bash
-# 必須
+# Required
 gh secret set ANTHROPIC_API_KEY --body "sk-ant-..."
 
-# GSC 用（任意）
+# For GSC (optional) — service account JSON from Google Cloud
 gh secret set GOOGLE_APPLICATION_CREDENTIALS_JSON --body "$(cat service-account.json)"
 
-# AdSense 用（任意）
+# For AdSense (optional)
 gh secret set ADSENSE_CLIENT_ID     --body "..."
 gh secret set ADSENSE_CLIENT_SECRET --body "..."
 gh secret set ADSENSE_REFRESH_TOKEN --body "..."
 gh secret set ADSENSE_PUBLISHER_ID  --body "pub-..."
 ```
 
-AdSense と GSC は**未設定でも動きます**。その場合は競合 Web 調査のみで改善ループが動きます。
+AdSense and GSC are **optional** — without them, the loop runs using competitor web research only.
 
-### 3. `.claude/skills/improvement-loop.md` をカスタマイズ
+### 3. Customize `.claude/skills/improvement-loop.md`
 
-以下の部分を自分のプロジェクトに合わせて編集してください：
+Edit the following to match your project:
 
-- テスト実行コマンド（デフォルト: `ruff check` + `pytest` / `tsc` + `npm build`）
-- 競合調査のキーワード
-- インサイント判定の基準
+- Test commands (default: `ruff check` + `pytest` / `tsc` + `npm build`)
+- Competitor research keywords
+- Insight priority thresholds
 
-### 4. 動作確認
+### 4. Verify
 
-GitHub → Actions → 「Claude - 自律改善ループ」→「Run workflow」で即時テスト実行できます。
+Go to **GitHub → Actions → "Claude - Autonomous Improvement Loop" → "Run workflow"** to trigger a test run immediately.
 
 ---
 
-## ファイル構成
+## File structure
 
 ```
 .github/workflows/
-├── claude-improvement-loop.yml    # スケジュール実行（月・金 9:00 JST）
-└── claude-review-responder.yml    # レビュー自動対応
+├── claude-improvement-loop.yml    # Scheduled run (Monday 9:00 AM JST)
+└── claude-review-responder.yml    # Auto-respond to PR reviews
 
 .claude/skills/
-└── improvement-loop.md            # Claude への指示書（思考手順）
+└── improvement-loop.md            # Claude's instruction manual (reasoning steps)
 ```
 
 ---
 
-## ⚠️ よくあるハマりポイント
+## ⚠️ Common pitfalls
 
-| 症状 | 原因 | 対処 |
+| Symptom | Cause | Fix |
 |---|---|---|
-| `App token exchange failed: 401` | `id-token: write` が permissions にない | 全ワークフローに `id-token: write` を追加（Copilot が削除を提案しても無視） |
-| ワークフローが途中で止まる（承認待ち） | `--dangerously-skip-permissions` 未設定 | 全 Claude ワークフローの `claude_args` に追加 |
-| Bot 作成 PR に Copilot がアサインされない | Bot actor は `pull_request` イベントを発火しない | improvement-loop.yml に Copilot アサインステップを追加（下記参照） |
-| `claude-review.yml` が permission_denials で失敗 | レビューワークフローにも `--dangerously-skip-permissions` が必要 | `claude_args: "--max-turns 15 --dangerously-skip-permissions"` に変更 |
-| Bot 作成 PR にレビューが通らない | Bot actor はデフォルトでブロック | `allowed_bots: "claude[bot]"` を `claude-review.yml` に追加 |
-
-### Copilot 自動アサインステップの追加
-
-`claude-improvement-loop.yml` の末尾に追加：
-
-```yaml
-      - name: Assign Copilot to auto-improvement PRs
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr list --label auto-improvement --state open \
-            --json number,reviewRequests \
-            --jq '.[] | select(.reviewRequests | length == 0) | .number' | \
-          while read pr_number; do
-            gh api --method POST \
-              -H "Accept: application/vnd.github+json" \
-              "/repos/${{ github.repository }}/pulls/${pr_number}/requested_reviewers" \
-              -f "reviewers[]=copilot-pull-request-reviewer" \
-              && echo "Copilot assigned to PR #${pr_number}" \
-              || echo "Copilot assignment skipped for PR #${pr_number}"
-          done
-```
+| Workflow hangs waiting for approval | `--dangerously-skip-permissions` not set | Add to `claude_args` in all Claude workflows |
+| `App token exchange failed: 401` on review responder | When Copilot submits a review, `github.actor` becomes an external bot — Anthropic's OIDC exchange rejects it | Use Claude CLI directly instead of `claude-code-action@v1` (already done in this template) |
+| Copilot not auto-assigned to bot-created PRs | Bot actor doesn't fire `pull_request` events | Copilot assign step is included at the end of `claude-improvement-loop.yml` |
+| Bot-created PRs blocked from Claude review | Bot actors are blocked by default | Add `allowed_bots: "claude[bot]"` to `claude-review.yml` |
+| Copilot suggests removing `id-token: write` | Incorrect suggestion | Ignore it — removing it breaks `claude-code-action@v1`'s OIDC auth |
 
 ---
 
-## コスト目安
+## Cost estimate
 
-| 項目 | 目安 |
+| Item | Estimate |
 |---|---|
-| Anthropic API | 1回あたり数ドル |
-| 月8回（月・金 × 4週）| 月10〜30ドル前後 |
-| GitHub Actions | 無料枠内 |
+| Anthropic API | ~$5 per run |
+| Monthly (4 Mondays) | ~$20/month |
+| GitHub Actions | Within free tier |
 
-**オフにする方法**：GitHub Actions タブ → ワークフロー →「Disable workflow」
+**To disable**: GitHub Actions tab → workflow → "Disable workflow"
+
+To run on both Monday and Friday, uncomment the Friday cron in `claude-improvement-loop.yml` (~$40/month).
 
 ---
 
-## 詳細解説記事
+## Articles
 
-- [Part 1: 概要・設計編](#) — Qiita
-- [Part 2: 実装全公開編](#) — Qiita
-- [Part 3: GSC・AdSense API 認証設定編](#) — Qiita
+- [Part 1: Overview & Design](#) — Qiita
+- [Part 2: Full Implementation](#) — Qiita
+- [Part 3: GSC & AdSense API Auth Setup](#) — Qiita
 
 ---
 
